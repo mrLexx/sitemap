@@ -72,6 +72,11 @@ class Sitemap
     private $gzip = false;
 
     /**
+     * @var integer value of str_pad
+     */
+    private $strPad = 1;
+
+    /**
      * @var XMLWriter
      */
     private $writer;
@@ -179,7 +184,12 @@ class Sitemap
         $this->writer->writeElement('loc', $location);
 
         if ($lastModified !== null) {
-            $this->writer->writeElement('lastmod', date('c', $lastModified));
+            if(is_integer($lastModified)){
+                $this->writer->writeElement('lastmod', date('c', $lastModified));
+            } else {
+                $this->writer->writeElement('lastmod', $lastModified);
+            }
+            
         }
 
         if ($changeFrequency !== null) {
@@ -225,7 +235,7 @@ class Sitemap
                 $parts['extension'] = $filenameParts['extension'] . '.gz';
             }
         }
-        return $parts['dirname'] . DIRECTORY_SEPARATOR . $parts['filename'] . '_' . $this->fileCount . '.' . $parts['extension'];
+        return $parts['dirname'] . DIRECTORY_SEPARATOR . $parts['filename'] . '_' . str_pad($this->fileCount, $this->strPad, '0',STR_PAD_LEFT) . '.' . $parts['extension'];
     }
 
     /**
@@ -278,5 +288,14 @@ class Sitemap
             throw new \RuntimeException('Cannot change the gzip value once items have been added to the sitemap.');
         }
         $this->gzip = $bool;
+    }
+
+    /**
+     * Sets whether the resulting files will be gzipped or not.
+     * @param bool $bool
+     */
+    public function setStrPad($number)
+    {
+        $this->strPad = (int)$number;
     }
 }
