@@ -223,9 +223,11 @@ class Sitemap
      */
     private function getCurrentFilePath()
     {
+        /*
         if ($this->fileCount < 2) {
             return $this->filePath;
         }
+        */
 
         $parts = pathinfo($this->filePath);
         if ($parts['extension'] == 'gz') {
