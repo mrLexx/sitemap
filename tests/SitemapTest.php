@@ -5,6 +5,10 @@ use samdark\sitemap\Sitemap;
 
 class SitemapTest extends \PHPUnit_Framework_TestCase
 {
+    /**
+     * Asserts validity of simtemap according to XSD schema
+     * @param string $fileName
+     */
     protected function assertIsValidSitemap($fileName)
     {
         $xml = new \DOMDocument();
@@ -38,7 +42,7 @@ class SitemapTest extends \PHPUnit_Framework_TestCase
         }
         $sitemap->write();
 
-        $expectedFiles = [
+        $expectedFiles = array(
             __DIR__ . '/' .'sitemap_multi.xml',
             __DIR__ . '/' .'sitemap_multi_2.xml',
             __DIR__ . '/' .'sitemap_multi_3.xml',
@@ -49,7 +53,7 @@ class SitemapTest extends \PHPUnit_Framework_TestCase
             __DIR__ . '/' .'sitemap_multi_8.xml',
             __DIR__ . '/' .'sitemap_multi_9.xml',
             __DIR__ . '/' .'sitemap_multi_10.xml',
-        ];
+        );
         foreach ($expectedFiles as $expectedFile) {
             $this->assertTrue(file_exists($expectedFile), "$expectedFile does not exist!");
             $this->assertIsValidSitemap($expectedFile);
@@ -108,5 +112,61 @@ class SitemapTest extends \PHPUnit_Framework_TestCase
         unlink($fileName);
 
         $this->assertTrue($exceptionCaught, 'Expected InvalidArgumentException wasn\'t thrown.');
+    }
+
+    public function testWritingFileGzipped()
+    {
+        $fileName = __DIR__ . '/sitemap_gzipped.xml.gz';
+        $sitemap = new Sitemap($fileName);
+        $sitemap->setUseGzip(true);
+        $sitemap->addItem('http://example.com/mylink1');
+        $sitemap->addItem('http://example.com/mylink2', time());
+        $sitemap->addItem('http://example.com/mylink3', time(), Sitemap::HOURLY);
+        $sitemap->addItem('http://example.com/mylink4', time(), Sitemap::DAILY, 0.3);
+        $sitemap->write();
+
+        $this->assertTrue(file_exists($fileName));
+        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+        $this->assertEquals('application/x-gzip', $finfo->file($fileName));
+        $this->assertIsValidSitemap('compress.zlib://' . $fileName);
+
+        unlink($fileName);
+    }
+
+    public function testMultipleFilesGzipped()
+    {
+        $sitemap = new Sitemap(__DIR__ . '/sitemap_multi_gzipped.xml.gz');
+        $sitemap->setUseGzip(true);
+        $sitemap->setMaxUrls(2);
+
+        for ($i = 0; $i < 20; $i++) {
+            $sitemap->addItem('http://example.com/mylink' . $i, time());
+        }
+        $sitemap->write();
+
+        $expectedFiles = array(
+            __DIR__ . '/' .'sitemap_multi_gzipped.xml.gz',
+            __DIR__ . '/' .'sitemap_multi_gzipped_2.xml.gz',
+            __DIR__ . '/' .'sitemap_multi_gzipped_3.xml.gz',
+            __DIR__ . '/' .'sitemap_multi_gzipped_4.xml.gz',
+            __DIR__ . '/' .'sitemap_multi_gzipped_5.xml.gz',
+            __DIR__ . '/' .'sitemap_multi_gzipped_6.xml.gz',
+            __DIR__ . '/' .'sitemap_multi_gzipped_7.xml.gz',
+            __DIR__ . '/' .'sitemap_multi_gzipped_8.xml.gz',
+            __DIR__ . '/' .'sitemap_multi_gzipped_9.xml.gz',
+            __DIR__ . '/' .'sitemap_multi_gzipped_10.xml.gz',
+        );
+        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+        foreach ($expectedFiles as $expectedFile) {
+            $this->assertTrue(file_exists($expectedFile), "$expectedFile does not exist!");
+            $this->assertEquals('application/x-gzip', $finfo->file($expectedFile));
+            $this->assertIsValidSitemap('compress.zlib://' . $expectedFile);
+            unlink($expectedFile);
+        }
+
+        $urls = $sitemap->getSitemapUrls('http://example.com/');
+        $this->assertEquals(10, count($urls), print_r($urls, true));
+        $this->assertContains('http://example.com/sitemap_multi_gzipped.xml.gz', $urls);
+        $this->assertContains('http://example.com/sitemap_multi_gzipped_10.xml.gz', $urls);
     }
 }

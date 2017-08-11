@@ -41,7 +41,7 @@ class Sitemap
     /**
      * @var array path of files written
      */
-    private $writtenFilePaths = [];
+    private $writtenFilePaths = array();
 
     /**
      * @var integer number of URLs to be kept in memory before writing it to file
@@ -49,9 +49,14 @@ class Sitemap
     private $bufferSize = 1000;
 
     /**
+     * @var bool if XML should be indented
+     */
+    private $useIndent = true;
+
+    /**
      * @var array valid values for frequency parameter
      */
-    private $validFrequencies = [
+    private $validFrequencies = array(
         self::ALWAYS,
         self::HOURLY,
         self::DAILY,
@@ -59,8 +64,12 @@ class Sitemap
         self::MONTHLY,
         self::YEARLY,
         self::NEVER
-    ];
+    );
 
+    /**
+     * @var bool whether to gzip the resulting files or not
+     */
+    private $useGzip = false;
 
     /**
      * @var XMLWriter
@@ -84,19 +93,37 @@ class Sitemap
     }
 
     /**
-     * Creats new file
+     * Get array of generated files
+     * @return array
+     */
+    public function getWrittenFilePath()
+    {
+        return $this->writtenFilePaths;
+    }
+    
+    /**
+     * Creates new file
+     * @throws \RuntimeException if file is not writeable
      */
     private function createNewFile()
     {
         $this->fileCount++;
         $filePath = $this->getCurrentFilePath();
         $this->writtenFilePaths[] = $filePath;
-        @unlink($filePath);
+
+        if (file_exists($filePath)) {
+            $filePath = realpath($filePath);
+            if (is_writable($filePath)) {
+                unlink($filePath);
+            } else {
+                throw new \RuntimeException("File \"$filePath\" is not writable.");
+            }
+        }
 
         $this->writer = new XMLWriter();
         $this->writer->openMemory();
         $this->writer->startDocument('1.0', 'UTF-8');
-        $this->writer->setIndent(true);
+        $this->writer->setIndent($this->useIndent);
         $this->writer->startElement('urlset');
         $this->writer->writeAttribute('xmlns', 'http://www.sitemaps.org/schemas/sitemap/0.9');
     }
@@ -126,15 +153,34 @@ class Sitemap
      */
     private function flush()
     {
-        file_put_contents($this->getCurrentFilePath(), $this->writer->flush(true), FILE_APPEND);
+        $filePath = $this->getCurrentFilePath();
+        if ($this->useGzip) {
+            $filePath = 'compress.zlib://' . $filePath;
+        }
+        file_put_contents($filePath, $this->writer->flush(true), FILE_APPEND);
     }
 
+    /**
+     * Takes a string and validates, if the string
+     * is a valid url
+     *
+     * @param string $location
+     * @throws \InvalidArgumentException
+     */
+    protected function validateLocation($location) {
+        if (false === filter_var($location, FILTER_VALIDATE_URL)) {
+            throw new \InvalidArgumentException(
+                "The location must be a valid URL. You have specified: {$location}."
+            );
+        }
+    }
+    
     /**
      * Adds a new item to sitemap
      *
      * @param string $location location item URL
      * @param integer $lastModified last modification timestamp
-     * @param float $changeFrequency change frquency. Use one of self:: contants here
+     * @param float $changeFrequency change frequency. Use one of self:: constants here
      * @param string $priority item's priority (0.0-1.0). Default null is equal to 0.5
      *
      * @throws \InvalidArgumentException
@@ -151,15 +197,10 @@ class Sitemap
         if ($this->urlsCount % $this->bufferSize === 0) {
             $this->flush();
         }
-
         $this->writer->startElement('url');
 
-        if (false === filter_var($location, FILTER_VALIDATE_URL)) {
-            throw new \InvalidArgumentException(
-                "The location must be a valid URL. You have specified: {$location}."
-            );
-        }
-
+        $this->validateLocation($location);
+        
         $this->writer->writeElement('loc', $location);
 
         if ($lastModified !== null) {
@@ -184,7 +225,7 @@ class Sitemap
                     "Please specify valid priority. Valid values range from 0.0 to 1.0. You have specified: {$priority}."
                 );
             }
-            $this->writer->writeElement('priority', $priority);
+            $this->writer->writeElement('priority', number_format($priority, 1, '.', ','));
         }
 
         $this->writer->endElement();
@@ -202,6 +243,13 @@ class Sitemap
         }
 
         $parts = pathinfo($this->filePath);
+        if ($parts['extension'] === 'gz') {
+            $filenameParts = pathinfo($parts['filename']);
+            if (!empty($filenameParts['extension'])) {
+                $parts['filename'] = $filenameParts['filename'];
+                $parts['extension'] = $filenameParts['extension'] . '.gz';
+            }
+        }
         return $parts['dirname'] . DIRECTORY_SEPARATOR . $parts['filename'] . '_' . $this->fileCount . '.' . $parts['extension'];
     }
 
@@ -213,7 +261,7 @@ class Sitemap
      */
     public function getSitemapUrls($baseUrl)
     {
-        $urls = [];
+        $urls = array();
         foreach ($this->writtenFilePaths as $file) {
             $urls[] = $baseUrl . pathinfo($file, PATHINFO_BASENAME);
         }
@@ -239,5 +287,34 @@ class Sitemap
     public function setBufferSize($number)
     {
         $this->bufferSize = (int)$number;
+    }
+
+
+    /**
+     * Sets if XML should be indented.
+     * Default is true.
+     *
+     * @param bool $value
+     */
+    public function setUseIndent($value)
+    {
+        $this->useIndent = (bool)$value;
+    }
+
+    /**
+     * Sets whether the resulting files will be gzipped or not.
+     * @param bool $value
+     * @throws \RuntimeException when trying to enable gzip while zlib is not available or when trying to change
+     * setting when some items are already written
+     */
+    public function setUseGzip($value)
+    {
+        if ($value && !extension_loaded('zlib')) {
+            throw new \RuntimeException('Zlib extension must be enabled to gzip the sitemap.');
+        }
+        if ($this->urlsCount && $value != $this->useGzip) {
+            throw new \RuntimeException('Cannot change the gzip value once items have been added to the sitemap.');
+        }
+        $this->useGzip = $value;
     }
 }
